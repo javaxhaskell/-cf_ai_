@@ -102,34 +102,60 @@ between fetch and summarize keeps Workers AI rate-limit pressure low.
 - A Cloudflare account (free tier is fine for everything used here)
 - `wrangler` (installed locally as a dev dep — no global install needed)
 
-### Local dev
+### One-time setup
 
 ```bash
 git clone <your-clone-url> cf_ai_clarity
 cd cf_ai_clarity
 npm install
+npx wrangler login        # opens a browser; sign in to your Cloudflare account
+npm run setup:vectorize   # creates the Vectorize index + KV namespace
 ```
 
-Authenticate Wrangler and create the Vectorize index + KV namespace once:
+`setup:vectorize` runs:
+- `wrangler vectorize create clarity-memory --dimensions=768 --metric=cosine`
+- `wrangler kv namespace create clarity-prefs`
 
-```bash
-npx wrangler login
-npm run setup:vectorize
+The second command prints a line like:
+
+```
+✨ Success! Add the following to your configuration file:
+[[kv_namespaces]]
+binding = "PREFS"
+id = "abc123def456789…"
 ```
 
-`setup:vectorize` runs `wrangler vectorize create clarity-memory --dimensions=768 --metric=cosine`
-and `wrangler kv namespace create clarity-prefs`. Copy the printed KV namespace ID into
-`wrangler.jsonc → kv_namespaces[0].id`.
+**Copy that `id` value** and paste it into [`wrangler.jsonc`](wrangler.jsonc),
+replacing the `REPLACE_WITH_KV_NAMESPACE_ID` placeholder under
+`kv_namespaces[0].id`. (See the *Pre-deploy checklist* below for the full list
+of things to fill in before deploying.)
 
-Then start the dev server:
+### Local dev
 
 ```bash
 npm run dev
 ```
 
-Wrangler serves both the Worker and the bundled Vite client at `http://localhost:8787`.
-Open it, type a question, or click the microphone to speak. The right-hand panel shows
-the live workflow timeline and any memories recalled from prior sessions.
+Wrangler serves both the Worker and the bundled Vite client at
+`http://localhost:8787`. Open it, type a question, or click the microphone
+to speak. The right-hand panel shows the live workflow timeline and any
+memories recalled from prior sessions.
+
+### Pre-deploy checklist
+
+Before `npm run deploy`, work through this list. Items marked **graded** are
+required for the assignment.
+
+- [ ] **graded:** `wrangler.jsonc` → `kv_namespaces[0].id` is no longer
+      `REPLACE_WITH_KV_NAMESPACE_ID`. Run `npm run setup:vectorize` if not
+      already done.
+- [ ] *(optional)* `npx wrangler secret put BRAVE_API_KEY` for reliable web
+      search (DuckDuckGo HTML scrape works as a fallback but is rate-limited).
+- [ ] *(optional, for external-LLM swap)* `npx wrangler secret put OPENAI_API_KEY`
+      and/or `npx wrangler secret put ANTHROPIC_API_KEY`. Without these, the
+      agent uses Workers AI Llama 3.3 → Llama 3.1.
+- [ ] `npm run deploy:dry` is green (validates without uploading).
+- [ ] `docs/demo.gif` recorded — see [docs/HOW_TO_RECORD.md](docs/HOW_TO_RECORD.md).
 
 ### Deploy
 
@@ -275,10 +301,11 @@ tests/
 
 ## Demo
 
-> **Note:** Record a 30s GIF the first time you run the agent and place it at
-> `docs/demo.gif`. The README links it here once present.
+![cf_ai_clarity demo](docs/demo.gif)
 
-`docs/demo.gif` *(record locally — typing a research question, watching the timeline tick, then a follow-up to demonstrate semantic recall)*
+> Recording instructions: [docs/HOW_TO_RECORD.md](docs/HOW_TO_RECORD.md). The
+> file is ignored until you record it; once `docs/demo.gif` exists, GitHub
+> renders it inline above.
 
 ---
 
