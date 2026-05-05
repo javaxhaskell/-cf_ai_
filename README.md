@@ -297,16 +297,6 @@ tests/
   agent.test.ts            # formatBriefing markdown
 ```
 
----
-
-## Demo
-
-![cf_ai_clarity demo](docs/demo.gif)
-
-> Recording instructions: [docs/HOW_TO_RECORD.md](docs/HOW_TO_RECORD.md). The
-> file is ignored until you record it; once `docs/demo.gif` exists, GitHub
-> renders it inline above.
-
 
 ---
 
