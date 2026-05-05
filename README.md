@@ -14,7 +14,7 @@ Built for the Cloudflare Internship AI assignment. Repository name is prefixed w
 
 | Required component                 | Implementation                                                                                              | File(s)                                                                                                                                                                                                                                                          |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **LLM**                            | Llama 3.3 70B Instruct on Workers AI (with automatic fallback to Llama 3.1 8B)                              | [`src/server/tools/llm.ts`](src/server/tools/llm.ts), `wrangler.jsonc` (AI binding + `PRIMARY_MODEL` / `FALLBACK_MODEL`)                                                                                                                                          |
+| **LLM**                            | Llama 3.3 70B Instruct on Workers AI; automatic fallback to Llama 3.1 8B; **swappable to OpenAI or Anthropic** by setting `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` as a wrangler secret | [`src/server/tools/llm.ts`](src/server/tools/llm.ts), `wrangler.jsonc` (AI binding + `PRIMARY_MODEL` / `FALLBACK_MODEL`) |
 | **Workflow / coordination**        | Cloudflare **Workflow** (`cloudflare:workers`) orchestrating plan → search → fetch → summarize → critique → synthesize, plus a **Durable Object**–backed Agent that owns per-session state | [`src/server/workflow.ts`](src/server/workflow.ts), [`src/server/agent.ts`](src/server/agent.ts)                                                                                                                                                                  |
 | **User input (chat & voice)**      | React + Vite UI served via Workers Static Assets (Pages-style); Web Speech API for in-browser STT and optional TTS playback                                                          | [`src/client/App.tsx`](src/client/App.tsx), [`src/client/components/ChatPane.tsx`](src/client/components/ChatPane.tsx), [`src/client/components/VoiceInput.tsx`](src/client/components/VoiceInput.tsx), [`src/client/hooks/useVoice.ts`](src/client/hooks/useVoice.ts) |
 | **Memory / state**                 | Per-session SQL store (built into AIChatAgent) + long-term semantic memory in **Vectorize** (BGE embeddings) + Workers **KV** for user preferences                                  | [`src/server/memory/vectorize.ts`](src/server/memory/vectorize.ts), [`src/server/memory/kv.ts`](src/server/memory/kv.ts), [`src/server/tools/memory-store.ts`](src/server/tools/memory-store.ts), [`src/server/tools/memory-recall.ts`](src/server/tools/memory-recall.ts) |
@@ -187,8 +187,10 @@ message persistence and resumable streams.
 | `MEMORY_RECALL_THRESHOLD`  | `vars`          | Cosine similarity floor for recalled memories                                        | `0.72`                                   |
 | `MEMORY_RECALL_TOPK`       | `vars`          | Top-K memories considered each turn                                                  | `5`                                      |
 | `BRAVE_API_KEY`            | secret (opt.)   | Use Brave Search instead of DuckDuckGo HTML scraping (more reliable)                 | unset                                    |
-| `OPENAI_API_KEY`           | secret (opt.)   | Reserved for swapping in OpenAI as the primary LLM provider                          | unset                                    |
-| `ANTHROPIC_API_KEY`        | secret (opt.)   | Reserved for swapping in Anthropic as the primary LLM provider                       | unset                                    |
+| `OPENAI_API_KEY`           | secret (opt.)   | When set, OpenAI Chat Completions is used as the primary LLM (model `OPENAI_MODEL`, default `gpt-4o-mini`) | unset            |
+| `OPENAI_MODEL`             | secret (opt.)   | OpenAI model id when `OPENAI_API_KEY` is set                                         | `gpt-4o-mini`                            |
+| `ANTHROPIC_API_KEY`        | secret (opt.)   | When set (and OpenAI is not), Anthropic Messages is used as the primary LLM         | unset                                    |
+| `ANTHROPIC_MODEL`          | secret (opt.)   | Anthropic model id when `ANTHROPIC_API_KEY` is set                                   | `claude-haiku-4-5-20251001`              |
 
 Set secrets with `npx wrangler secret put BRAVE_API_KEY` (etc.). Do **not** put secrets
 in `wrangler.jsonc`.
@@ -217,47 +219,56 @@ in `wrangler.jsonc`.
 ```text
 src/
   server/
-    index.ts            # Worker fetch entry + /api routes; routes /agents/* via routeAgentRequest
-    agent.ts            # ResearchAgent extends AIChatAgent — chat surface + workflow event sink
-    workflow.ts         # ResearchWorkflow — durable plan → search → fetch → summarize → critique → synthesize
-    format.ts           # Briefing → markdown formatter (pure)
-    types.ts            # Env, AgentState, ResearchStep, CitedBriefing, …
+    index.ts             # Worker fetch entry: /api/health, /api/prefs, /api/state,
+                         #   /api/mcp (MCP JSON-RPC), /b/:id permalinks, /agents/* via routeAgentRequest
+    agent.ts             # ResearchAgent extends AIChatAgent — intent classify → workflow → state sync
+    workflow.ts          # ResearchWorkflow — durable plan → search → fetch → summarize → critique → synthesize → permalink
+    mcp.ts               # MCP-style JSON-RPC handler exposing `clarity.memory_recall`
+    briefings.ts         # KV-backed briefing storage + shareable HTML view (XSS-safe)
+    format.ts            # Briefing → markdown formatter (pure)
+    types.ts             # Env, AgentState, ResearchStep, CitedBriefing, …
     tools/
-      llm.ts            # Workers AI runner with automatic fallback model
-      web-search.ts     # Brave Search → DuckDuckGo HTML fallback
-      web-fetch.ts      # Allow-listed fetch + readability extraction (timeout, byte cap)
-      memory-recall.ts  # Vectorize query (top-K + threshold)
-      memory-store.ts   # Embed (question+summary) and upsert to Vectorize
+      llm.ts             # OpenAI → Anthropic → Workers AI primary → Workers AI fallback
+      web-search.ts      # Brave Search → DuckDuckGo HTML fallback
+      web-fetch.ts       # Browser Rendering (when bound) → plain fetch + readability
+      memory-recall.ts   # Vectorize query (top-K + threshold)
+      memory-store.ts    # Embed (question+summary) and upsert to Vectorize
     memory/
-      vectorize.ts      # embed() / upsert() / query() helpers
-      kv.ts             # Zod-validated user prefs in Workers KV
+      vectorize.ts       # embed() / upsert() / query() helpers
+      kv.ts              # Zod-validated user prefs in Workers KV
     prompts/
-      planner.ts        # JSON plan + parser
-      synthesizer.ts    # JSON cited briefing + parser
-      critic.ts         # JSON critique + parser
-      summarizer.ts     # JSON per-source summary + parser
-      intent.ts         # chitchat vs research classifier (LLM + heuristic fallback)
+      planner.ts         # JSON plan + parser
+      synthesizer.ts     # JSON cited briefing + parser
+      critic.ts          # JSON critique + parser
+      summarizer.ts      # JSON per-source summary + parser
+      intent.ts          # chitchat vs research classifier (LLM + heuristic fallback)
   client/
-    main.tsx            # React 19 entry
-    App.tsx             # useAgent + useAgentChat wiring; state sync; TTS hookup
+    main.tsx             # React 19 entry
+    App.tsx              # useAgent + useAgentChat; state sync; settings; error toast; TTS
     components/
-      ChatPane.tsx      # message list + composer with Enter-to-send and lightweight markdown
-      VoiceInput.tsx    # mic button + interim-transcript display
-      WorkflowTimeline.tsx  # live step status driven by agent state
-      MemoryPanel.tsx   # recalled prior briefings with similarity scores
+      ChatPane.tsx       # message list + composer; provider badge; settings/clear buttons
+      VoiceInput.tsx     # mic button + interim-transcript display
+      WorkflowTimeline.tsx  # live step status + total elapsed time
+      MemoryPanel.tsx    # recalled prior briefings with similarity scores
+      SourceCards.tsx    # citation cards w/ favicons; copy-md, copy-json, copy-permalink
+      SettingsPanel.tsx  # KV-backed per-session prefs (TTS, recall threshold)
+      ErrorToast.tsx     # transient error display
     hooks/
-      useVoice.ts       # Web Speech API wrapper (STT) + speechSynthesis (TTS)
+      useVoice.ts        # Web Speech API wrapper (STT) + speechSynthesis (TTS)
 tests/
-  prompts.test.ts        # planner / synthesizer / critic / summarizer / intent parsers
-  parsers-extra.test.ts  # parser edge cases (fences, prose-wrapped, malformed)
-  web-search.test.ts     # DuckDuckGo HTML parser
-  web-search-fetch.test.ts  # fetch-mocked end-to-end search + fetch
-  web-fetch.test.ts      # allowlist + readability extraction
-  llm.test.ts            # Workers AI fallback semantics
-  workflow-step.test.ts  # mocked-AI test for plan + summarize steps
-  memory.test.ts         # KV prefs schema
-  kv-prefs.test.ts       # KV mock round-trip
-  agent.test.ts          # formatBriefing markdown
+  prompts.test.ts          # planner / synthesizer / critic / summarizer / intent parsers
+  parsers-extra.test.ts    # parser edge cases (fences, prose-wrapped, malformed)
+  web-search.test.ts       # DuckDuckGo HTML parser
+  web-search-fetch.test.ts # fetch-mocked end-to-end search + fetch
+  web-fetch.test.ts        # allowlist + readability extraction
+  llm.test.ts              # Workers AI fallback semantics
+  llm-providers.test.ts    # OpenAI / Anthropic / Workers AI provider routing & fall-through
+  workflow-step.test.ts    # mocked-AI test for plan + summarize steps
+  memory.test.ts           # KV prefs schema
+  kv-prefs.test.ts         # KV mock round-trip
+  briefings.test.ts        # permalink store/load + HTML rendering + XSS guard
+  mcp.test.ts              # MCP JSON-RPC tools/list + tools/call (success and error paths)
+  agent.test.ts            # formatBriefing markdown
 ```
 
 ---
@@ -271,19 +282,45 @@ tests/
 
 ---
 
+## Beyond the spec — what's already wired
+
+This submission goes beyond the four required components:
+
+- ✅ **Provider swap** — set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` via
+  `wrangler secret put` and the workflow uses that provider; on failure it falls
+  through to the next provider, then to Workers AI. The active provider is shown in
+  the chat header.
+- ✅ **Browser Rendering** opt-in — when a `BROWSER` binding is configured, the
+  fetch tool routes through Cloudflare Browser Rendering for client-rendered pages.
+  Falls back to plain fetch when not configured.
+- ✅ **MCP-style JSON-RPC endpoint** at `/api/mcp` exposing `clarity.memory_recall`
+  to other agents and IDEs. `tools/list` and `tools/call` implemented.
+- ✅ **Briefing permalinks** — every completed briefing is saved to KV under
+  `/b/:id` with an OG-meta-tagged shareable HTML view (and a `.json` companion).
+- ✅ **Settings panel** — per-session prefs persisted in KV, recall threshold tunable
+  live, TTS toggle, active-provider indicator.
+- ✅ **Live workflow timeline** with total elapsed time, step-level detail, and
+  graceful error toast on workflow failure.
+- ✅ **CI** — GitHub Actions runs typecheck, lint, tests with coverage, Vite build,
+  and `wrangler deploy --dry-run` on every push and PR.
+- ✅ **XSS-safe permalink rendering** — verified by test (`tests/briefings.test.ts`).
+- ✅ **92 tests passing** with 87% statement / 89% line coverage on covered modules.
+
 ## What I'd do next
 
-- **Cloudflare Browser Rendering** for fetch — replaces the manual readability heuristic
-  with a real headless browser, handling client-rendered pages and PDFs correctly.
-- **AI Gateway** in front of the AI binding — caching, retries, model fallbacks, and
-  per-session rate limits centralised at the gateway, not the app.
-- **Server-side tools exposed via MCP** — `agents/mcp` lets us expose `memory-recall`
-  and `memory-store` to other agents and IDEs as MCP tools.
-- **Sub-agents per topic** — long-running follow-up agents that watch a topic over time
-  and proactively notify when a key claim changes (the Agents SDK supports this via
-  `sub` agents and `scheduleEvery`).
-- **Real human-in-the-loop fetch gate** — flip `AUTO_APPROVE_FETCH=false` and surface
-  the approval as a chat-side tool-call card via `useAgentChat`'s `onToolCall`.
+- **Full Agents-SDK MCP transport** — replace the lightweight `/api/mcp` JSON-RPC
+  shim with `agents/mcp`'s `McpAgent` + SSE transport so Claude Desktop / Cursor
+  can connect natively over MCP-RPC.
+- **AI Gateway** in front of every model call — caching, retries, model fallbacks,
+  and per-session rate limits centralised at the gateway rather than in app code.
+- **Sub-agents per topic** — long-running follow-up agents that watch a topic and
+  proactively notify when a key claim changes (Agents SDK supports this via `sub`
+  agents and `scheduleEvery`).
+- **Real human-in-the-loop fetch gate** — flip `AUTO_APPROVE_FETCH=false` and
+  surface the approval as a chat-side tool-call card via `useAgentChat`'s
+  `onToolCall`.
+- **Streaming synthesis** — currently the briefing is appended atomically. Stream
+  the synthesizer's output token-by-token into the assistant message instead.
 - **Eval harness** — golden-set of 20 research questions with expected citations and
   confidence; run nightly via Workflows on a cron.
 

@@ -9,6 +9,8 @@ export default defineConfig({
       provider: "v8",
       include: [
         "src/server/format.ts",
+        "src/server/briefings.ts",
+        "src/server/mcp.ts",
         "src/server/prompts/**/*.ts",
         "src/server/tools/llm.ts",
         "src/server/tools/web-search.ts",
