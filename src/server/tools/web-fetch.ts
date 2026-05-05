@@ -27,6 +27,17 @@ export async function webFetch(env: Env, url: string): Promise<FetchedSource> {
   if (!isAllowedUrl(env, url)) {
     throw new FetchDeniedError(new URL(url).hostname);
   }
+  if (env.BROWSER) {
+    try {
+      return await fetchViaBrowserRendering(env, url);
+    } catch (err) {
+      console.warn("browser rendering failed, falling back to plain fetch", err);
+    }
+  }
+  return fetchPlain(url);
+}
+
+async function fetchPlain(url: string): Promise<FetchedSource> {
   const res = await fetch(url, {
     headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml" },
     redirect: "follow",
@@ -43,6 +54,27 @@ export async function webFetch(env: Env, url: string): Promise<FetchedSource> {
     url,
     title: title || url,
     text,
+    fetchedAt: Date.now(),
+  };
+}
+
+async function fetchViaBrowserRendering(env: Env, url: string): Promise<FetchedSource> {
+  if (!env.BROWSER) throw new Error("BROWSER binding not configured");
+  const res = await env.BROWSER.fetch("https://browser/render", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url, waitUntil: "networkidle0", screenshot: false }),
+  });
+  if (!res.ok) {
+    throw new Error(`browser render ${url} → ${res.status}`);
+  }
+  const data = (await res.json()) as { html?: string; title?: string };
+  const html = data.html ?? "";
+  if (!html) throw new Error("browser render returned empty html");
+  return {
+    url,
+    title: data.title ?? extractTitle(html) ?? url,
+    text: extractReadableText(html),
     fetchedAt: Date.now(),
   };
 }
