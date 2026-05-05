@@ -15,8 +15,11 @@ export type Env = {
   MEMORY_RECALL_THRESHOLD: string;
   MEMORY_RECALL_TOPK: string;
   OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_MODEL?: string;
   BRAVE_API_KEY?: string;
+  BROWSER?: Fetcher;
 };
 
 export type ResearchStepName =
@@ -93,6 +96,8 @@ export type AgentState = {
   recalledMemoryIds: string[];
   recalledMemories: RecalledMemory[];
   lastBriefing: CitedBriefing | null;
+  lastPermalinkId: string | null;
+  provider: "workers-ai" | "openai" | "anthropic";
 };
 
 export type WorkflowParams = {

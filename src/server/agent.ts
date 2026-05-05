@@ -4,7 +4,14 @@ import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import type { Env, AgentState, ResearchStep, CitedBriefing, RecalledMemory } from "./types.js";
 import { embed } from "./memory/vectorize.js";
 import { runMemoryRecall } from "./tools/memory-recall.js";
-import { heuristicIntent } from "./prompts/intent.js";
+import {
+  heuristicIntent,
+  buildIntentPrompt,
+  INTENT_SYSTEM,
+  tryParseIntent,
+  type IntentParsed,
+} from "./prompts/intent.js";
+import { runLlm, activeProvider } from "./tools/llm.js";
 import { formatBriefing } from "./format.js";
 
 export { formatBriefing };
@@ -15,6 +22,8 @@ const INITIAL_STATE: AgentState = {
   recalledMemoryIds: [],
   recalledMemories: [],
   lastBriefing: null,
+  lastPermalinkId: null,
+  provider: "workers-ai",
 };
 
 const STEP_ORDER = [
@@ -44,7 +53,7 @@ export class ResearchAgent extends AIChatAgent<Env, AgentState> {
 
   override async onChatMessage(): Promise<Response | undefined> {
     const lastUserText = extractLastUserText(this.messages);
-    const intent = heuristicIntent(lastUserText);
+    const intent = await this.classifyIntent(lastUserText);
     const workersai = createWorkersAI({ binding: this.env.AI });
     const modelId = this.env.PRIMARY_MODEL as Parameters<typeof workersai>[0];
 
@@ -82,6 +91,7 @@ export class ResearchAgent extends AIChatAgent<Env, AgentState> {
     this.setState({
       ...this.state,
       activeWorkflowId: instance.id,
+      provider: activeProvider(this.env),
     });
 
     const recallNote =
@@ -103,6 +113,24 @@ export class ResearchAgent extends AIChatAgent<Env, AgentState> {
     return result.toUIMessageStreamResponse();
   }
 
+  private async classifyIntent(text: string): Promise<IntentParsed> {
+    if (text.trim().length < 8) return heuristicIntent(text);
+    try {
+      const raw = await runLlm(this.env, {
+        system: INTENT_SYSTEM,
+        user: buildIntentPrompt(text),
+        json: true,
+        maxTokens: 80,
+        temperature: 0,
+      });
+      const parsed = tryParseIntent(raw);
+      if (parsed) return parsed;
+    } catch (err) {
+      console.warn("intent classifier failed, using heuristic", err);
+    }
+    return heuristicIntent(text);
+  }
+
   private async recall(question: string): Promise<RecalledMemory[]> {
     try {
       const topK = Number(this.env.MEMORY_RECALL_TOPK);
@@ -117,7 +145,7 @@ export class ResearchAgent extends AIChatAgent<Env, AgentState> {
   private async handleWorkflowEvent(request: Request): Promise<Response> {
     const body = (await request.json()) as
       | { type: "step"; name: ResearchStep["name"]; status: ResearchStep["status"]; detail?: string }
-      | { type: "done"; briefing: CitedBriefing };
+      | { type: "done"; briefing: CitedBriefing; permalinkId?: string };
 
     if (body.type === "step") {
       const now = Date.now();
@@ -132,8 +160,15 @@ export class ResearchAgent extends AIChatAgent<Env, AgentState> {
       const steps = mergeSteps(this.state.steps, updated);
       this.setState({ ...this.state, steps });
     } else if (body.type === "done") {
-      this.setState({ ...this.state, lastBriefing: body.briefing, activeWorkflowId: null });
-      const text = formatBriefing(body.briefing);
+      this.setState({
+        ...this.state,
+        lastBriefing: body.briefing,
+        activeWorkflowId: null,
+        lastPermalinkId: body.permalinkId ?? null,
+      });
+      const text = body.permalinkId
+        ? formatBriefing(body.briefing) + `\n\n_permalink: [/b/${body.permalinkId}](/b/${body.permalinkId})_`
+        : formatBriefing(body.briefing);
       try {
         const next: UIMessage = {
           id: `assistant-${Date.now()}`,
