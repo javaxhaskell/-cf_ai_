@@ -1,0 +1,7 @@
+# Optional: external LLM provider override. Leave unset to use Workers AI.
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional: search provider key (Brave Search). Without it, the agent uses
+# DuckDuckGo HTML scraping which is rate-limited and best-effort.
+# BRAVE_API_KEY=
