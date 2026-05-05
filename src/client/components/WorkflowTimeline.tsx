@@ -60,13 +60,7 @@ export function WorkflowTimeline({ steps, activeWorkflowId }: Props) {
     >
       <header className="mb-3 flex items-baseline justify-between">
         <h2 className="text-sm font-semibold text-zinc-200">Research timeline</h2>
-        {activeWorkflowId ? (
-          <code className="text-[10px] text-zinc-500 truncate max-w-[60%]" title={activeWorkflowId}>
-            {activeWorkflowId.slice(0, 18)}…
-          </code>
-        ) : (
-          <span className="text-[10px] text-zinc-500">idle</span>
-        )}
+        <TimelineMeta steps={steps} activeWorkflowId={activeWorkflowId} />
       </header>
       <ol className="space-y-2">
         {renderable.map((step) => {
@@ -99,4 +93,36 @@ export function WorkflowTimeline({ steps, activeWorkflowId }: Props) {
       </ol>
     </section>
   );
+}
+
+function TimelineMeta({ steps, activeWorkflowId }: { steps: ClientStep[]; activeWorkflowId: string | null }) {
+  const earliest = steps.reduce<number | undefined>(
+    (m, s) => (s.startedAt ? (m === undefined || s.startedAt < m ? s.startedAt : m) : m),
+    undefined,
+  );
+  const latest = steps.reduce<number | undefined>(
+    (m, s) => (s.finishedAt ? (m === undefined || s.finishedAt > m ? s.finishedAt : m) : m),
+    undefined,
+  );
+  const totalMs = earliest && latest && latest >= earliest ? latest - earliest : undefined;
+  const isDone = steps.find((s) => s.name === "done")?.status === "ok";
+
+  if (isDone && totalMs !== undefined) {
+    return (
+      <span
+        className="text-[10px] tabular-nums text-emerald-300 bg-emerald-400/10 border border-emerald-400/30 rounded-full px-2 py-0.5"
+        title="total elapsed time"
+      >
+        ✓ {(totalMs / 1000).toFixed(1)}s
+      </span>
+    );
+  }
+  if (activeWorkflowId) {
+    return (
+      <code className="text-[10px] text-zinc-500 truncate max-w-[60%]" title={activeWorkflowId}>
+        {activeWorkflowId.slice(0, 18)}…
+      </code>
+    );
+  }
+  return <span className="text-[10px] text-zinc-500">idle</span>;
 }

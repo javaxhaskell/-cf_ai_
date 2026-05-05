@@ -39,6 +39,8 @@ export type ClientAgentState = {
   recalledMemoryIds: string[];
   recalledMemories: ClientRecalledMemory[];
   lastBriefing: ClientCitedBriefing | null;
+  lastPermalinkId: string | null;
+  provider: "workers-ai" | "openai" | "anthropic";
 };
 
 export const STEP_LABELS: Record<ClientStepName, string> = {

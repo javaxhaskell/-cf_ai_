@@ -12,6 +12,8 @@ type Props = {
   onClear: () => void;
   ttsEnabled: boolean;
   onToggleTts: () => void;
+  onOpenSettings: () => void;
+  provider: "workers-ai" | "openai" | "anthropic";
 };
 
 function renderMessageText(msg: UIMessage): string {
@@ -59,6 +61,8 @@ export function ChatPane({
   onClear,
   ttsEnabled,
   onToggleTts,
+  onOpenSettings,
+  provider,
 }: Props) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -83,7 +87,13 @@ export function ChatPane({
         <div className="flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-clarity-accent shadow-[0_0_10px] shadow-clarity-accent" />
           <h1 className="text-sm font-semibold tracking-wide">Clarity</h1>
-          <span className="text-[10px] text-zinc-500">research agent · cloudflare</span>
+          <span className="text-[10px] text-zinc-500 hidden sm:inline">research agent · cloudflare</span>
+          <span
+            className="text-[10px] text-zinc-400 bg-zinc-900 border border-zinc-800 rounded-full px-1.5 py-0.5 tabular-nums"
+            title="active LLM provider"
+          >
+            {provider}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -97,6 +107,14 @@ export function ChatPane({
             }`}
           >
             🔊 TTS {ttsEnabled ? "on" : "off"}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="text-xs rounded-md border border-zinc-700 px-2 py-1 text-zinc-400 hover:text-zinc-200"
+            aria-label="Open settings"
+          >
+            ⚙ settings
           </button>
           <button
             type="button"
