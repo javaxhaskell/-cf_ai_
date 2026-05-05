@@ -13,6 +13,7 @@ import { runLlm } from "./tools/llm.js";
 import { webSearch } from "./tools/web-search.js";
 import { webFetch, isAllowedUrl, FetchDeniedError } from "./tools/web-fetch.js";
 import { persistBriefing } from "./tools/memory-store.js";
+import { saveBriefing } from "./briefings.js";
 import { buildPlannerPrompt, PLANNER_SYSTEM, tryParsePlan } from "./prompts/planner.js";
 import {
   buildSummarizerPrompt,
@@ -268,8 +269,14 @@ export class ResearchWorkflow extends WorkflowEntrypoint<Env, WorkflowParams> {
       },
     );
 
-    await notifyAgent(env, agentId, { type: "done", briefing });
-    await update(env, agentId, { name: "done", status: "ok" });
+    const permalinkId = await step.do(
+      "permalink",
+      { retries: { limit: 2, delay: "1 second", backoff: "linear" } },
+      async () => saveBriefing(env, question, briefing),
+    );
+
+    await notifyAgent(env, agentId, { type: "done", briefing, permalinkId });
+    await update(env, agentId, { name: "done", status: "ok", detail: `permalink: /b/${permalinkId}` });
     return briefing;
   }
 }
