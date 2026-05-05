@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --color-clarity-bg: #0a0a0b;
+  --color-clarity-panel: #111114;
+  --color-clarity-border: #27272a;
+  --color-clarity-accent: #f6821f;
+  --color-clarity-accent-soft: #fbad41;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    sans-serif;
+  font-feature-settings: "ss01", "cv11";
+}
+
+.prose-clarity p {
+  margin: 0.5em 0;
+}
+.prose-clarity h1,
+.prose-clarity h2,
+.prose-clarity h3 {
+  font-weight: 600;
+  margin: 0.5em 0 0.25em;
+}
+.prose-clarity ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.prose-clarity code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.1em 0.35em;
+  border-radius: 0.25em;
+  font-size: 0.9em;
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
